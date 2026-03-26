@@ -1,0 +1,2 @@
+# projecmate-the-matchmaker-and-ai-mentor-for-great-projects
+The Problem: Many students and beginner developers have great ideas, but struggle to find the right teammates. Existing platforms are for finding jobs or sharing code, not for forming project teams. Consequently, many great ideas are never actually built. The Solution: ProjectMate is a smart matchmaking app that solves this. It connects people with
