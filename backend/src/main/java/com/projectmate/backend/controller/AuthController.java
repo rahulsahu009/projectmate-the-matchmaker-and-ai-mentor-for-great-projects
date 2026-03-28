@@ -1,7 +1,7 @@
 package com.projectmate.backend.controller;
 
+import com.projectmate.backend.dto.JwtResponse;
 import com.projectmate.backend.dto.LoginRequest;
-import com.projectmate.backend.dto.LoginResponse;
 import com.projectmate.backend.model.User;
 import com.projectmate.backend.security.JwtUtils;
 import com.projectmate.backend.service.AuthService;
@@ -28,11 +28,11 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<JwtResponse> login(@RequestBody LoginRequest loginRequest) {
         User user = authService.login(loginRequest);
         if (user != null) {
             String token = jwtUtils.generateJwtToken(user.getEmail(), user.getId());
-            return ResponseEntity.ok(new LoginResponse(token, user));
+            return ResponseEntity.ok(new JwtResponse(token, user.getId(), user.getName(), user.getEmail(), user.getRole()));
         } else {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }

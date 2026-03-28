@@ -15,7 +15,9 @@ export const AuthProvider = ({ children }) => {
     if (storedAuthStr) {
       try {
         const storedAuth = JSON.parse(storedAuthStr);
-        setUser(storedAuth.user);
+        // Flatten extraction
+        const parsedUser = storedAuth.user ? storedAuth.user : (({ token, ...rest }) => rest)(storedAuth);
+        setUser(parsedUser);
       } catch (e) {
         console.error("Failed to parse user session.");
       }
@@ -24,9 +26,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = (authData) => {
-    // authData from backend is { token: '...', user: {...} }
-    localStorage.setItem('auth_data', JSON.stringify(authData));
-    setUser(authData.user);
+    // Dynamically store unified or flattened structure
+    const parsedUser = authData.user ? authData.user : (({ token, ...rest }) => rest)(authData);
+    localStorage.setItem('auth_data', JSON.stringify({ token: authData.token, ...parsedUser }));
+    setUser(parsedUser);
   };
 
   const logout = () => {
