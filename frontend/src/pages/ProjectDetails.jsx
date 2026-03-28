@@ -1,279 +1,445 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import api from '../lib/axios';
+import { AuthContext } from '../context/AuthContext';
 import { Client } from '@stomp/stompjs';
-import { Code2, Send, MessageSquare, Github, GitCommit, Link as LinkIcon, ArrowRight } from 'lucide-react';
-import api from '../api/axiosConfig';
-import { useAuth } from '../context/AuthContext';
+import Modal from '../components/Modal';
 
-export default function ProjectDetails() {
-  const { id } = useParams();
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
-  
-  const [githubActivity, setGithubActivity] = useState([]);
-  const [githubLoading, setGithubLoading] = useState(false);
-  
-  // Chat state
-  const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState('');
-  const stompClient = useRef(null);
-  const scrollRef = useRef(null);
+const ProjectDetails = () => {
+    const { id } = useParams();
+    const { user } = useContext(AuthContext);
+    const [project, setProject] = useState(null);
+    const [teamMessages, setTeamMessages] = useState([]);
+    const [aiMessages, setAiMessages] = useState([]);
+    const [activeTab, setActiveTab] = useState('TEAM');
+    const [teamWidgetTab, setTeamWidgetTab] = useState('MEMBERS');
+    const [teamRequests, setTeamRequests] = useState([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [stompClient, setStompClient] = useState(null);
+    const [isRoadmapExpanded, setIsRoadmapExpanded] = useState(false);
+    
+    // New states for finalizing team
+    const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
+    const [githubUrl, setGithubUrl] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isAutoSyncing, setIsAutoSyncing] = useState(false);
+    const [hasAutoSynced, setHasAutoSynced] = useState(false);
+    
+    const navigate = useNavigate();
 
-  const { user: authUser } = useAuth();
-  const user = authUser || {};
+    useEffect(() => {
+        if (project && project.githubRepoUrl && (project.teamFinalized || project.isTeamFinalized) && !hasAutoSynced) {
+            setHasAutoSynced(true);
+            const performAutoSync = async () => {
+                setIsAutoSyncing(true);
+                try {
+                    const res = await api.post(`/projects/${project.id}/auto-sync-progress`);
+                    setProject(res.data);
+                } catch (error) {
+                    console.error("Auto sync failed:", error);
+                } finally {
+                    setIsAutoSyncing(false);
+                }
+            };
+            performAutoSync();
+        }
+    }, [project?.githubRepoUrl, project?.teamFinalized, project?.isTeamFinalized, hasAutoSynced]);
 
-  useEffect(() => {
-    const fetchGithubActivity = async (projectId) => {
-      setGithubLoading(true);
-      try {
-        const gRes = await api.get(`/projects/${projectId}/github/commits`);
-        setGithubActivity(gRes.data);
-      } catch (e) {
-        console.error('Failed to load GitHub activity natively', e);
-      } finally {
-        setGithubLoading(false);
-      }
+    useEffect(() => {
+        fetchProject();
+        fetchMessages();
+    }, [id]);
+
+    const fetchMessages = async () => {
+        try {
+            const teamRes = await api.get(`/team-messages/${id}/TEAM`);
+            setTeamMessages(teamRes.data);
+            const aiRes = await api.get(`/team-messages/${id}/AI`);
+            setAiMessages(aiRes.data);
+        } catch (error) {
+            console.error("Error fetching messages:", error);
+        }
     };
+
+    useEffect(() => {
+        if (project) {
+            fetchTeamRequests();
+        }
+    }, [project, id]);
+
+    useEffect(() => {
+        const client = new Client({
+            brokerURL: 'ws://localhost:8080/project-websocket',
+            reconnectDelay: 5000,
+            onConnect: () => {
+                client.subscribe(`/topic/chat/${id}/TEAM`, (msg) => {
+                    const parsedMsg = JSON.parse(msg.body);
+                    setTeamMessages(prev => [...prev, parsedMsg]);
+                });
+                client.subscribe(`/topic/chat/${id}/AI`, (msg) => {
+                    const parsedMsg = JSON.parse(msg.body);
+                    setAiMessages(prev => [...prev, parsedMsg]);
+                });
+            }
+        });
+        client.activate();
+        setStompClient(client);
+
+        return () => client.deactivate();
+    }, [id]);
 
     const fetchProject = async () => {
-      try {
-        const response = await api.get(`/projects/${id}`);
-        setProject(response.data);
-        if (response.data.githubRepoUrl) {
-          fetchGithubActivity(response.data.id);
+        try {
+            const res = await api.get('/projects');
+            const found = res.data.find(p => p.id === parseInt(id));
+            if (!found) {
+                navigate('/dashboard');
+                return;
+            }
+
+            if (found.createdBy.id === user.id) {
+                setProject(found);
+                return;
+            }
+
+            try {
+                const reqRes = await api.get('/team-requests/user');
+                const myReq = reqRes.data.find(r => r.project.id === found.id && r.status === 'ACCEPTED');
+                if (myReq) {
+                    setProject(found);
+                } else {
+                    alert('You do not have access to this project workspace.');
+                    navigate('/dashboard');
+                }
+            } catch (err) {
+                console.error('Access check failed', err);
+                navigate('/dashboard');
+            }
+        } catch (error) { 
+            console.error(error); 
+            navigate('/dashboard');
         }
-      } catch (error) {
-        console.error("Error fetching project metadata", error);
-      } finally {
-        setLoading(false);
-      }
     };
-    fetchProject();
 
-    // Connect WebSocket
-    const client = new Client({
-      brokerURL: 'ws://localhost:8080/ws',
-      reconnectDelay: 5000,
-      onConnect: () => {
-        console.log("Connected to STOMP");
-        client.subscribe(`/topic/project/${id}`, (message) => {
-          if (message.body) {
-            const newMsg = JSON.parse(message.body);
-            setMessages((prev) => [...prev, newMsg]);
-          }
+    const fetchTeamRequests = async () => {
+        try {
+            const res = await api.get(`/team-requests/project/${id}`);
+            setTeamRequests(res.data);
+        } catch (error) {
+            console.error("Error fetching team requests:", error);
+        }
+    };
+
+    const handleRequestStatus = async (requestId, status) => {
+        try {
+            await api.patch(`/team-requests/${requestId}?status=${status}`);
+            setTeamRequests(prev => prev.map(req => req.id === requestId ? { ...req, status } : req));
+        } catch (error) {
+            console.error("Error updating request status:", error);
+            alert(error.response?.data?.message || 'Error updating status');
+        }
+    };
+
+    const handleFinalizeClick = () => {
+        setIsFinalizeModalOpen(true);
+    };
+
+    const submitFinalize = async () => {
+        if (!githubUrl || !githubUrl.includes('github.com/')) {
+            alert('Please enter a valid GitHub repository URL (must contain "github.com/").');
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            await api.patch(`/projects/${id}/finalize`, { githubRepoUrl: githubUrl });
+            setProject(prev => ({...prev, teamFinalized: true, isTeamFinalized: true, githubRepoUrl: githubUrl, status: 'IN_PROGRESS'}));
+            alert('Team has been finalized and repository linked successfully!');
+            setIsFinalizeModalOpen(false);
+            setTeamWidgetTab('MEMBERS');
+        } catch (error) {
+            console.error("Error finalizing team:", error);
+            alert(error.response?.data?.message || "Error finalizing team");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const sendMessage = () => {
+        if (!newMessage.trim() || !stompClient) return;
+        
+        const messageObj = {
+            senderId: user.id,
+            senderName: user.name,
+            content: newMessage,
+            projectId: id
+        };
+        
+        stompClient.publish({
+            destination: `/app/chat/${id}/${activeTab}`,
+            body: JSON.stringify(messageObj)
         });
-      },
-      onStompError: (frame) => {
-        console.error('STOMP error', frame.headers['message']);
-      }
-    });
-
-    client.activate();
-    stompClient.current = client;
-
-    return () => {
-      client.deactivate();
-    };
-  }, [id]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!inputValue.trim() || !user.id || !stompClient.current || !stompClient.current.connected) return;
-
-    const chatMsg = {
-      senderId: user.id,
-      projectId: parseInt(id),
-      content: inputValue,
+        setNewMessage('');
     };
 
-    stompClient.current.publish({
-      destination: '/app/chat.sendMessage',
-      body: JSON.stringify(chatMsg),
-    });
+    if (!project) return <div className="text-white p-8">Loading project...</div>;
 
-    setInputValue('');
-  };
-
-  const Skeleton = () => (
-    <div className="flex flex-col lg:flex-row gap-8 w-full animate-pulse mt-8">
-      <div className="w-full lg:w-2/3 p-8 rounded-3xl bg-gray-200/50 dark:bg-gray-900/50 border border-gray-200/50 dark:border-gray-800/50">
-        <div className="h-12 bg-gray-300 dark:bg-gray-700 w-1/3 rounded-xl mb-6"></div>
-        <div className="h-6 bg-gray-300 dark:bg-gray-700 w-1/4 rounded-lg mb-10"></div>
-        <div className="h-4 bg-gray-300 dark:bg-gray-700 w-full rounded-md mb-4"></div>
-        <div className="h-4 bg-gray-300 dark:bg-gray-700 w-full rounded-md mb-4"></div>
-        <div className="h-4 bg-gray-300 dark:bg-gray-700 w-5/6 rounded-md mb-10"></div>
-        <div className="h-10 bg-gray-300 dark:bg-gray-700 w-1/4 rounded-xl"></div>
-      </div>
-      <div className="w-full lg:w-1/3 h-[600px] rounded-3xl bg-gray-200/50 dark:bg-gray-900/50 border border-gray-200/50 dark:border-gray-800/50"></div>
-    </div>
-  );
-
-  if (loading) {
-    return <div className="container mx-auto px-4 py-8 max-w-7xl"><Skeleton /></div>;
-  }
-
-  if (!project) {
-    return <div className="flex items-center justify-center min-h-[60vh] text-center py-20 text-gray-500 text-2xl font-bold">Project not found or server is down.</div>;
-  }
-
-  return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl flex flex-col lg:flex-row gap-8 items-start">
-      
-      {/* Project Details Panel */}
-      <div className="w-full lg:w-2/3 p-8 rounded-3xl bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl border border-gray-200/50 dark:border-gray-800/50 shadow-2xl transition-all duration-300 hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)]">
-        <h1 className="text-4xl font-extrabold text-gray-900 dark:text-white mb-4 tracking-tight drop-shadow-sm">{project.title}</h1>
-        
-        <div className="flex flex-wrap items-center gap-3 mb-8">
-          <span className={`px-4 py-1.5 text-xs font-black rounded-lg uppercase tracking-wider shadow-sm ${project.status === 'OPEN' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 border border-green-200 dark:border-green-800/50' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/50'}`}>
-            {project.status}
-          </span>
-          <span className="text-gray-500 dark:text-gray-400 text-sm font-semibold border-l-2 border-gray-300 dark:border-gray-700 pl-3">
-             Project ID: {id}
-          </span>
-          <span className="text-gray-500 dark:text-gray-400 text-sm font-semibold border-l-2 border-gray-300 dark:border-gray-700 pl-3">
-             Creator: <span className="text-gray-700 dark:text-gray-300 font-bold">{project.creator?.name || 'Unknown'}</span>
-          </span>
-        </div>
-
-        <div className="text-gray-700 dark:text-gray-300 text-lg leading-relaxed mb-10 bg-white/40 dark:bg-gray-800/40 p-6 rounded-2xl border border-gray-100 dark:border-gray-700/50 shadow-inner">
-          {project.description}
-        </div>
-
-        <div className="mb-6">
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 tracking-tight">Required Expertise</h3>
-          <div className="flex flex-wrap gap-2.5">
-            {project.requiredSkills?.split(',').map((skill, index) => (
-              <span key={index} className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-bold border border-indigo-100 dark:border-indigo-800/50 shadow-sm transition-transform hover:-translate-y-1 hover:shadow-md cursor-default">
-                <Code2 className="h-4 w-4 opacity-70" />
-                <span>{skill.trim()}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent GitHub Activity Widget */}
-        {project.githubRepoUrl && (
-          <div className="bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl rounded-3xl p-8 border border-gray-200/50 dark:border-gray-800/50 shadow-2xl relative group transition-all duration-300">
-            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl pointer-events-none" />
-            <div className="relative z-10 w-full">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                <div className="flex items-center space-x-3">
-                  <div className="h-12 w-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shadow-inner">
-                    <Github className="h-6 w-6 text-gray-700 dark:text-gray-300" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent leading-tight tracking-tight">System Timeline</h2>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Track repository events seamlessly</p>
-                  </div>
-                </div>
-                <a href={project.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center space-x-2 text-sm text-indigo-500 font-bold px-5 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 transition-all hover:-translate-y-0.5 whitespace-nowrap shadow-sm">
-                  <LinkIcon className="h-4 w-4" />
-                  <span>View Source</span>
-                </a>
-              </div>
-
-              <div className="space-y-6 pt-2">
-                {githubLoading ? (
-                  <div className="animate-pulse space-y-5 pt-4 border-l-2 border-indigo-500/20 ml-2 pl-6">
-                    <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded-md w-3/4 shadow-inner"></div>
-                    <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded-md w-1/2 shadow-inner"></div>
-                  </div>
-                ) : githubActivity && githubActivity.length > 0 ? (
-                  githubActivity.map((event, idx) => (
-                    <div key={idx} className="relative pl-8 before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-gradient-to-b before:from-indigo-500/50 before:to-transparent last:before:hidden py-3 group/commit">
-                      <div className="absolute left-0 top-5 h-6 w-6 rounded-full border-2 border-indigo-500 bg-white dark:bg-gray-950 flex items-center justify-center shadow-[0_0_10px_rgba(99,102,241,0.5)] z-10 transition-transform group-hover/commit:scale-125 duration-300">
-                        <GitCommit className="h-3 w-3 text-indigo-500" />
-                      </div>
-                      <div className="bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 backdrop-blur-sm transition-all hover:bg-white dark:hover:bg-gray-800 shadow-sm hover:shadow-md hover:border-indigo-500/30">
-                        <div className="flex flex-col sm:flex-row justify-between sm:items-center space-y-2 sm:space-y-0 mb-3">
-                          <span className="font-bold text-gray-900 dark:text-gray-100 flex items-center text-lg drop-shadow-sm">
-                            {event.commit?.author?.name || 'Unknown Author'}
-                          </span>
-                          <span className="text-xs font-mono font-semibold text-gray-500 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm">
-                            {new Date(event.commit?.author?.date || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </span>
+    return (
+        <div className="min-h-screen bg-slate-50 dark:bg-gray-950 text-slate-900 dark:text-white p-4 sm:p-8 transition-colors duration-300">
+            <div className="max-w-[1440px] mx-auto flex gap-8 flex-col lg:flex-row items-start">
+                {/* Left side: Project Info & Roadmap */}
+                <div className="flex-1 space-y-8">
+                <div className="bg-white dark:bg-gray-900 p-6 sm:p-8 rounded-xl border border-slate-200 dark:border-gray-800 shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] flex flex-col xl:flex-row gap-8 transition-colors">
+                    {/* Left: Project Info */}
+                    <div className="flex-1">
+                        <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-4">{project.title}</h1>
+                        <p className="text-slate-600 dark:text-gray-400 mb-6 leading-relaxed">{project.description}</p>
+                        <div className="flex flex-wrap gap-2">
+                            {project.requiredSkills?.split(',').map((s, i) => (
+                                <span key={i} className="px-3 py-1 bg-purple-50 dark:bg-purple-900/20 text-neon-purple dark:text-purple-400 rounded-full text-sm font-semibold border border-purple-100 dark:border-purple-800/50">{s.trim()}</span>
+                            ))}
                         </div>
-                        <p className="text-gray-600 dark:text-gray-300 mb-4 font-medium leading-relaxed">{event.commit?.message}</p>
-                        <a href={event.html_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-sm font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors group/link cursor-pointer">
-                          View API Extract <ArrowRight className="h-3.5 w-3.5 ml-1.5 transition-transform group-hover/link:translate-x-1" />
-                        </a>
-                      </div>
+                        {project.createdBy?.id === user?.id && !(project.teamFinalized || project.isTeamFinalized) && (
+                            <button onClick={handleFinalizeClick} className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg font-bold shadow-[0_4px_15px_rgba(16,185,129,0.3)] hover:opacity-90 mt-6 inline-block transition-all transform hover:-translate-y-0.5">
+                                Finalize Team
+                            </button>
+                        )}
+                        {(project.teamFinalized || project.isTeamFinalized) && (
+                            <div className="flex items-center gap-3 mt-6 flex-wrap">
+                                <span className="px-4 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800/50 text-green-700 dark:text-green-400 rounded-lg font-bold inline-block shadow-sm">
+                                    Team is Finalized
+                                </span>
+                                {project.githubRepoUrl && (
+                                    <a href={project.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white dark:bg-gray-800 border border-slate-300 dark:border-gray-700 text-electric-blue dark:text-sky-400 hover:text-slate-900 dark:hover:text-white hover:border-slate-400 dark:hover:border-gray-500 hover:bg-slate-50 dark:hover:bg-gray-700 rounded-lg font-bold inline-block transition-all shadow-sm">
+                                        View Repository
+                                    </a>
+                                )}
+                            </div>
+                        )}
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-10 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-800 my-4 shadow-inner mt-4">
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">No recent commits established natively within tracking perimeter.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
 
-      {/* Real-time Collaboration Panel */}
-      <div className="w-full lg:w-1/3 flex flex-col h-[650px] rounded-3xl bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl border border-gray-200/50 dark:border-gray-800/50 shadow-2xl overflow-hidden sticky top-24 transition-all">
-        <div className="p-5 border-b border-gray-200/50 dark:border-gray-800/50 bg-white/40 dark:bg-gray-800/40 flex items-center space-x-3 shadow-sm z-10">
-          <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg">
-            <MessageSquare className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-          </div>
-          <div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">Project Room</h3>
-            <p className="text-xs text-green-600 dark:text-green-400 font-semibold flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5 animate-pulse"></span>Live
-            </p>
-          </div>
-        </div>
-        
-        <div 
-          ref={scrollRef} 
-          className="flex-1 overflow-y-auto p-5 space-y-5 scroll-smooth bg-gray-50/30 dark:bg-gray-900/20"
-        >
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 font-medium text-sm text-center px-4 space-y-2">
-              <MessageSquare className="h-10 w-10 opacity-20" />
-              <p>Be the first to say hello!<br/> Chat is live and connected.</p>
-            </div>
-          ) : (
-            messages.map((msg, index) => {
-              const isMe = msg.senderId === user.id;
-              return (
-                <div key={index} className={`flex flex-col animate-[fadeIn_0.3s_ease-out] ${isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`px-4 py-3 rounded-2xl max-w-[85%] ${isMe ? 'bg-indigo-600 text-white rounded-br-none shadow-lg shadow-indigo-600/20' : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-none shadow-lg border border-gray-100 dark:border-gray-700/50'}`}>
-                    <p className="text-[15px] leading-relaxed break-words">{msg.content}</p>
-                  </div>
-                  <span className="text-xs font-semibold text-gray-400 mt-1.5 px-2">Member {msg.senderId}</span>
+                    {/* Right: Team Members & Requests Widget */}
+                    <div className="w-full xl:w-[400px] border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-xl flex flex-col min-h-[200px] shadow-sm overflow-hidden shrink-0 transition-colors">
+                        <div className="flex border-b border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-gray-800/50">
+                            <button 
+                                onClick={() => setTeamWidgetTab('MEMBERS')}
+                                className={`flex-1 py-3 text-sm font-bold transition-colors ${teamWidgetTab === 'MEMBERS' ? 'bg-white dark:bg-gray-900 border-b-2 border-electric-blue text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800'}`}
+                            >
+                                Team Members
+                            </button>
+                            {project.createdBy?.id === user?.id && !(project.teamFinalized || project.isTeamFinalized) && (
+                                <button 
+                                    onClick={() => setTeamWidgetTab('REQUESTS')}
+                                    className={`flex-1 py-3 text-sm font-bold transition-colors flex items-center justify-center gap-2 ${teamWidgetTab === 'REQUESTS' ? 'bg-white dark:bg-gray-900 border-b-2 border-electric-blue text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800'}`}
+                                >
+                                    Requests
+                                    {teamRequests.filter(req => req.status === 'PENDING').length > 0 && (
+                                        <span className="bg-red-500 text-white rounded-full px-2 py-0.5 text-xs shadow-sm">
+                                            {teamRequests.filter(req => req.status === 'PENDING').length}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar bg-slate-50/50 dark:bg-gray-900/50">
+                            {teamWidgetTab === 'MEMBERS' ? (
+                                <>
+                                    <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-xl border border-slate-200 dark:border-gray-700 border-l-4 border-l-neon-purple shadow-sm transition-colors">
+                                        <div className="flex items-center flex-wrap gap-2">
+                                            <Link to={`/user/${project.createdBy.id}`} className="text-electric-blue hover:text-slate-900 dark:hover:text-white hover:underline transition-colors font-bold text-sm">
+                                                {project.createdBy.name}
+                                            </Link>
+                                            <span className="text-[10px] text-neon-purple dark:text-purple-400 font-semibold border border-purple-100 dark:border-purple-800/50 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded truncate max-w-[180px]">Creator • {project.createdBy.skills}</span>
+                                        </div>
+                                    </div>
+                                    {teamRequests.filter(req => req.status === 'ACCEPTED').map(req => (
+                                        <div key={req.id} className="flex justify-between items-center bg-white dark:bg-gray-800 p-3 rounded-xl border border-slate-200 dark:border-gray-700 shadow-sm transition-colors">
+                                            <div className="flex items-center flex-wrap gap-2">
+                                                <Link to={`/user/${req.requester.id}`} className="text-electric-blue hover:text-slate-900 dark:hover:text-white hover:underline transition-colors font-bold text-sm">
+                                                    {req.requester.name}
+                                                </Link>
+                                                <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900 px-2 py-0.5 rounded truncate max-w-[150px]">{req.requester.skills}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-1 rounded-md shrink-0">Member</span>
+                                                {project.createdBy?.id === user?.id && !(project.teamFinalized || project.isTeamFinalized) && (
+                                                    <button onClick={() => handleRequestStatus(req.id, 'REJECTED')} className="text-[10px] text-red-600 dark:text-red-400 hover:text-white font-bold bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800/50 hover:bg-red-500 dark:hover:bg-red-600 px-2 py-1 rounded transition-colors">Remove</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </>
+                            ) : (
+                                <>
+                                    {teamRequests.filter(req => req.status === 'PENDING').length === 0 ? (
+                                        <p className="text-slate-500 dark:text-gray-400 text-sm text-center mt-6 font-medium">No pending join requests.</p>
+                                    ) : (
+                                        teamRequests.filter(req => req.status === 'PENDING').map(req => (
+                                            <div key={req.id} className="flex flex-col bg-white dark:bg-gray-800 p-3 rounded-xl border border-slate-200 dark:border-gray-700 shadow-sm gap-3 transition-colors">
+                                                <div className="flex items-center flex-wrap gap-2">
+                                                    <Link to={`/user/${req.requester.id}`} className="text-electric-blue hover:text-slate-900 dark:hover:text-white hover:underline transition-colors font-bold text-sm">
+                                                        {req.requester.name}
+                                                    </Link>
+                                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-900 px-2 py-0.5 rounded truncate max-w-[120px]">{req.requester.skills}</span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => handleRequestStatus(req.id, 'ACCEPTED')} className="flex-1 py-1.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800/50 rounded-lg hover:bg-green-600 hover:text-white hover:border-green-600 transition-colors text-xs font-bold">Accept</button>
+                                                    <button onClick={() => handleRequestStatus(req.id, 'REJECTED')} className="flex-1 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 rounded-lg hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors text-xs font-bold">Reject</button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
-              );
-            })
-          )}
+
+                {/* Project Progress Tracker */}
+                {(project.teamFinalized || project.isTeamFinalized) && project.githubRepoUrl && (project.progressPercentage > 0 || project.aiProgressNotes || isAutoSyncing) && (
+                    <div className="bg-white dark:bg-gray-900 p-8 rounded-xl border border-slate-200 dark:border-gray-800 shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] transition-colors">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                            <h2 className="text-2xl font-bold text-electric-blue flex items-center gap-3">
+                                AI Progress Tracker 
+                                <span className="text-xs font-semibold text-slate-500 dark:text-gray-400 bg-slate-50 dark:bg-gray-800/50 px-3 py-1.5 rounded-full border border-slate-200 dark:border-gray-700 tracking-wide uppercase hidden sm:inline-block">Powered by GitHub Commits</span>
+                            </h2>
+                            {isAutoSyncing && (
+                                <span className="text-xs font-medium text-slate-500 dark:text-gray-400 flex items-center gap-2 bg-slate-50 dark:bg-gray-800/50 px-3 py-1.5 rounded-full border border-slate-200 dark:border-gray-700 shrink-0">
+                                    <span className="w-3.5 h-3.5 border-2 border-neon-purple border-t-transparent rounded-full animate-spin"></span> 
+                                    Syncing API...
+                                </span>
+                            )}
+                        </div>
+                        
+                        <div className="mb-8">
+                            <div className="flex justify-between items-end mb-3">
+                                <span className="text-sm font-semibold text-slate-500 dark:text-gray-400 tracking-wide uppercase">Overall Completion</span>
+                                <span className="text-3xl font-bold text-neon-purple drop-shadow-sm">{project.progressPercentage || 0}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 dark:bg-gray-800 rounded-full h-4 border border-slate-200 dark:border-gray-700 overflow-hidden shadow-inner">
+                                <div 
+                                    className="bg-gradient-to-r from-electric-blue to-neon-purple h-full rounded-full transition-all duration-1000 relative shadow-sm" 
+                                    style={{ width: `${project.progressPercentage || 0}%` }}
+                                >
+                                    <div className="absolute inset-0 bg-white/20 w-full animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {project.aiProgressNotes && (
+                            <div>
+                                <h3 className="text-xs font-bold text-slate-500 dark:text-gray-400 mb-3 uppercase tracking-widest flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-green-500 shadow-sm"></span> 
+                                    Completed Features Map
+                                </h3>
+                                <div className="bg-slate-50 dark:bg-gray-800/50 border border-slate-200 dark:border-gray-700 rounded-lg p-5 shadow-sm">
+                                    <div className="prose prose-slate max-w-none text-slate-600 dark:text-gray-300 text-sm whitespace-pre-line leading-relaxed font-medium">
+                                        {project.aiProgressNotes}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <div className="bg-white dark:bg-gray-900 p-8 rounded-xl border border-slate-200 dark:border-gray-800 shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] transition-colors">
+                    <h2 className="text-2xl font-bold mb-4 text-electric-blue">AI Technical Roadmap</h2>
+                    <div className={`relative transition-all duration-300 ${!isRoadmapExpanded && project.aiRoadmap?.length > 400 ? 'max-h-64 overflow-hidden' : ''}`}>
+                        <div className="prose prose-slate max-w-none text-slate-700 dark:text-gray-300 whitespace-pre-wrap bg-slate-50 dark:bg-gray-800/50 p-6 rounded-lg border border-slate-200 dark:border-gray-700 shadow-sm">
+                            {project.aiRoadmap || "No roadmap generated."}
+                        </div>
+                        {!isRoadmapExpanded && project.aiRoadmap?.length > 400 && (
+                            <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-white dark:from-gray-900 to-transparent pointer-events-none rounded-b-lg border-b border-slate-200 dark:border-gray-800"></div>
+                        )}
+                    </div>
+                    {project.aiRoadmap?.length > 400 && (
+                        <div className="mt-4 flex justify-center">
+                            <button 
+                                onClick={() => setIsRoadmapExpanded(!isRoadmapExpanded)}
+                                className="px-6 py-2 bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-full text-electric-blue hover:bg-slate-50 dark:hover:bg-gray-700 transition-all text-sm font-bold shadow-sm focus:outline-none"
+                            >
+                                {isRoadmapExpanded ? '^ View Less' : 'v View Full Roadmap'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Right side: Team Workspace / Chat */}
+            <div className="w-full lg:w-[450px] lg:sticky lg:top-24 bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-gray-800 flex flex-col h-[750px] lg:h-[calc(100vh-8rem)] shadow-[0_8px_30px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] shrink-0 transition-colors">
+                <div className="flex border-b border-slate-200 dark:border-gray-800 bg-slate-50 dark:bg-gray-800 rounded-t-xl overflow-hidden transition-colors">
+                    <button 
+                        onClick={() => setActiveTab('TEAM')}
+                        className={`flex-1 py-4 text-center font-bold transition-colors ${activeTab === 'TEAM' ? 'bg-white dark:bg-gray-900 border-b-2 border-electric-blue text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/50 hover:text-slate-800 dark:hover:text-gray-200'}`}
+                    >
+                        Team Chat
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('AI')}
+                        className={`flex-1 py-4 text-center font-bold transition-colors ${activeTab === 'AI' ? 'bg-white dark:bg-gray-900 border-b-2 border-electric-blue text-slate-900 dark:text-white' : 'text-slate-500 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-800/50 hover:text-slate-800 dark:hover:text-gray-200'}`}
+                    >
+                        Ask Mentor AI
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-50/30 dark:bg-gray-900/50">
+                    {(activeTab === 'TEAM' ? teamMessages : aiMessages).map((m, i) => (
+                        <div key={i} className={`flex flex-col ${m.senderId === user?.id ? 'items-end' : 'items-start'}`}>
+                            <span className="text-xs text-slate-500 dark:text-gray-400 mb-1 font-medium">{m.senderName}</span>
+                            <div className={`p-3 max-w-[85%] rounded-2xl shadow-sm text-sm ${
+                                m.senderId === -1 ? 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/50 text-purple-900 dark:text-purple-300' : 
+                                m.senderId === user?.id ? 'bg-electric-blue text-white font-medium rounded-br-none' : 'bg-white dark:bg-gray-800 border border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-300 rounded-bl-none'
+                            }`}>
+                                {m.content}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                
+                <div className="p-4 border-t border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 rounded-b-xl flex gap-3 transition-colors">
+                    <input type="text" value={newMessage} onChange={e => setNewMessage(e.target.value)} 
+                        onKeyPress={e => e.key === 'Enter' && sendMessage()}
+                        className="flex-1 bg-slate-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:border-electric-blue focus:ring-1 focus:ring-electric-blue outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-gray-500" placeholder="Type a message..." />
+                    <button onClick={sendMessage} className="bg-electric-blue text-white px-5 py-2.5 rounded-lg font-bold hover:bg-cyan-600 shadow-sm transition-all focus:outline-none transform hover:-translate-y-0.5">Send</button>
+                </div>
+                </div>
+            </div>
+
+            <Modal isOpen={isFinalizeModalOpen} onClose={() => !isSubmitting && setIsFinalizeModalOpen(false)} title="Finalize Team & Link Repository">
+                <div className="space-y-4">
+                    <p className="text-slate-600 dark:text-gray-300 text-sm">
+                        Please provide the GitHub repository URL for this project. Once finalized, you will not be able to accept new members or remove current ones.
+                    </p>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-1">GitHub Repository URL <span className="text-red-500">*</span></label>
+                        <input 
+                            type="url" 
+                            placeholder="https://github.com/username/repo"
+                            value={githubUrl}
+                            onChange={(e) => setGithubUrl(e.target.value)}
+                            className="w-full bg-white dark:bg-gray-800 border border-slate-300 dark:border-gray-600 rounded-lg px-4 py-2.5 text-slate-900 dark:text-white focus:border-electric-blue focus:ring-1 focus:ring-electric-blue outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-gray-500 shadow-sm"
+                        />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button 
+                            onClick={() => setIsFinalizeModalOpen(false)}
+                            className="px-4 py-2 text-slate-600 dark:text-gray-400 hover:text-slate-900 dark:hover:text-white transition-colors font-semibold"
+                            disabled={isSubmitting}
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={submitFinalize}
+                            disabled={isSubmitting}
+                            className={`px-6 py-2 bg-gradient-to-r from-neon-purple to-electric-blue text-white rounded-lg font-bold shadow-sm transition-all ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90 transform hover:-translate-y-0.5'}`}
+                        >
+                            {isSubmitting ? 'Finalizing...' : 'Finalize & Start'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </div>
-
-        <form onSubmit={sendMessage} className="p-4 bg-white/60 dark:bg-gray-800/60 border-t border-gray-200/50 dark:border-gray-800/50 flex space-x-2 z-10 backdrop-blur-md">
-          <input 
-            type="text" 
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            disabled={!user.id}
-            placeholder={user.id ? "Type your message..." : "Login to chat..."}
-            className="flex-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-inner rounded-xl px-4 py-3 text-[15px] focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 dark:text-white transition-all disabled:opacity-50"
-          />
-          <button 
-            type="submit" 
-            disabled={!inputValue.trim() || !user.id}
-            className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:bg-indigo-400 dark:disabled:bg-indigo-900/50 transition-all hover:-translate-y-1 hover:shadow-lg shadow-indigo-600/30 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 flex items-center justify-center cursor-pointer"
-          >
-            <Send className="h-5 w-5 ml-0.5" />
-          </button>
-        </form>
-      </div>
-
-    </div>
-  );
-}
+    );
+};
+export default ProjectDetails;

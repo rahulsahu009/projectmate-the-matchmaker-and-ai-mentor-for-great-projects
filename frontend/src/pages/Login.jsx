@@ -1,84 +1,57 @@
-import React, { useState } from 'react';
-import { LogIn } from 'lucide-react';
-import api from '../api/axiosConfig';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useContext } from 'react';
+import { AuthContext } from '../context/AuthContext';
+import { useNavigate, Link } from 'react-router-dom';
+import api from '../lib/axios';
 
-export default function Login() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('alice@test.com');
-  const [password, setPassword] = useState('password');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+const Login = () => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const { login } = useContext(AuthContext);
+    const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    
-    try {
-      const response = await api.post('/auth/login', { email, password });
-      login(response.data);
-      // Full reload to gracefully transition layout for MVP
-      window.location.href = '/explore'; 
-    } catch (err) {
-      setError('Invalid credentials or server offline.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            const res = await api.post('/auth/login', { email, password });
+            login(res.data.user, res.data.token);
+            if (res.data.user.role === 'ADMIN') {
+                navigate('/admin');
+            } else {
+                navigate('/dashboard');
+            }
+        } catch (err) {
+            setError(err.response?.data || 'Login failed');
+        }
+    };
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh]">
-      <div className="w-full max-w-md p-8 rounded-3xl bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl border border-gray-200/50 dark:border-gray-800/50 shadow-2xl transition-all">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 text-center tracking-tight">Login to ProjectMate</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-center mb-8">Ready to jump back in?</p>
-        
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm text-center font-medium">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
-            <input 
-              type="email" 
-              required
-              className="w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              placeholder="e.g. alice@test.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
-            <input 
-              type="password" 
-              required
-              className="w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-600/30 transition-transform duration-300 hover:-translate-y-1 font-medium"
-          >
-            {loading ? (
-              <span className="animate-pulse">Authenticating...</span>
-            ) : (
-              <>
-                <LogIn className="h-5 w-5" />
-                <span>Sign In</span>
-              </>
-            )}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-gray-950 transition-colors duration-300">
+            <div className="w-full max-w-md p-8 space-y-6 bg-white dark:bg-gray-900 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.5)] border border-slate-200 dark:border-gray-800 transition-colors">
+                <h2 className="text-3xl font-bold text-center text-slate-900 dark:text-white">Student Login</h2>
+                <h3 className="text-sm tracking-widest uppercase font-semibold text-center text-electric-blue">ProjectMate Platform</h3>
+                {error && <div className="p-3 text-red-600 bg-red-50 border border-red-100 rounded-lg">{error}</div>}
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-gray-300">Email</label>
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                            className="w-full px-4 py-2 mt-1 text-slate-900 dark:text-white bg-slate-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-electric-blue/20 focus:border-electric-blue focus:outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-gray-500" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-gray-300">Password</label>
+                        <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+                            className="w-full px-4 py-2 mt-1 text-slate-900 dark:text-white bg-slate-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-electric-blue/20 focus:border-electric-blue focus:outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-gray-500" />
+                    </div>
+                    <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-gradient-to-r from-electric-blue to-neon-purple rounded-lg hover:shadow-[0_4px_15px_rgba(2,132,199,0.3)] dark:shadow-[0_4px_15px_rgba(2,132,199,0.5)] transition-all">
+                        Login
+                    </button>
+                    <p className="text-sm text-center text-slate-500 dark:text-gray-400">
+                        Don't have an account? <Link to="/register" className="text-electric-blue font-semibold hover:underline">Register</Link>
+                    </p>
+                </form>
+            </div>
+        </div>
+    );
+};
+export default Login;

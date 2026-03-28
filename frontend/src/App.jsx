@@ -1,41 +1,70 @@
-import React from 'react';
-import { Routes, Route } from 'react-router-dom';
-import { ThemeProvider } from './context/ThemeContext';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
-import Home from './pages/Home';
+import Footer from './components/Footer';
 import Login from './pages/Login';
-import Explore from './pages/Explore';
+import AdminLogin from './pages/AdminLogin';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import ProjectDetails from './pages/ProjectDetails';
 import CreateProject from './pages/CreateProject';
-
-function AppContent() {
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-950 font-sans text-gray-900 dark:text-gray-100 transition-colors duration-200 flex flex-col">
-      <Navbar />
-      <main className="flex-1 w-full mx-auto relative relative">
-        <div className="absolute top-0 inset-x-0 h-96 bg-gradient-to-b from-indigo-100/50 to-transparent dark:from-indigo-900/10 dark:to-transparent pointer-events-none -translate-y-px"></div>
-        <div className="relative z-10 w-full h-full">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/explore" element={<Explore />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/projects/:id" element={<ProjectDetails />} />
-              <Route path="/create-project" element={<CreateProject />} />
-            </Routes>
-        </div>
-      </main>
-    </div>
-  );
-}
+import ProjectDetails from './pages/ProjectDetails';
+import Admin from './pages/Admin';
+import Home from './pages/Home';
+import Explore from './pages/Explore';
+import Profile from './pages/Profile';
 
 function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AppContent />
+        <Router>
+          <div className="flex flex-col min-h-screen bg-slate-50 text-slate-900 dark:bg-gray-950 dark:text-gray-100 font-sans selection:bg-electric-blue/20 selection:text-electric-blue border-transparent transition-colors duration-300">
+            <Navbar />
+            <main className="flex-1 flex flex-col">
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/explore" element={<Explore />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/admin-login" element={<AdminLogin />} />
+                <Route path="/register" element={<Register />} />
+                
+                <Route path="/dashboard" element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                } />
+                <Route path="/create-project" element={
+                  <ProtectedRoute>
+                    <CreateProject />
+                  </ProtectedRoute>
+                } />
+                
+                <Route path="/project/:id" element={
+                  <ProtectedRoute>
+                    <ProjectDetails />
+                  </ProtectedRoute>
+                } />
+                
+                <Route path="/user/:id" element={
+                  <ProtectedRoute>
+                    <Profile />
+                  </ProtectedRoute>
+                } />
+                
+                <Route path="/admin" element={
+                  <ProtectedRoute requiredRole="ADMIN">
+                    <Admin />
+                  </ProtectedRoute>
+                } />
+                
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+            <Footer />
+          </div>
+        </Router>
       </AuthProvider>
     </ThemeProvider>
   );
