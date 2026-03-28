@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
+import api from '../services/api';
 
 const AuthContext = createContext();
 
@@ -7,10 +8,14 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+    // Migration check: clean up old 'user' object if it was there
+    localStorage.removeItem('user'); 
+    
+    const storedAuthStr = localStorage.getItem('auth_data');
+    if (storedAuthStr) {
       try {
-        setUser(JSON.parse(storedUser));
+        const storedAuth = JSON.parse(storedAuthStr);
+        setUser(storedAuth.user);
       } catch (e) {
         console.error("Failed to parse user session.");
       }
@@ -18,13 +23,14 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = (userData) => {
-    localStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
+  const login = (authData) => {
+    // authData from backend is { token: '...', user: {...} }
+    localStorage.setItem('auth_data', JSON.stringify(authData));
+    setUser(authData.user);
   };
 
   const logout = () => {
-    localStorage.removeItem('user');
+    localStorage.removeItem('auth_data');
     setUser(null);
   };
 

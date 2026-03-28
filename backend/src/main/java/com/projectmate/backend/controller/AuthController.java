@@ -1,7 +1,9 @@
 package com.projectmate.backend.controller;
 
 import com.projectmate.backend.dto.LoginRequest;
+import com.projectmate.backend.dto.LoginResponse;
 import com.projectmate.backend.model.User;
+import com.projectmate.backend.security.JwtUtils;
 import com.projectmate.backend.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -16,6 +18,9 @@ public class AuthController {
     @Autowired
     private AuthService authService;
 
+    @Autowired
+    private JwtUtils jwtUtils;
+
     @PostMapping("/register")
     public ResponseEntity<User> register(@RequestBody User user) {
         User registeredUser = authService.register(user);
@@ -23,10 +28,11 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<User> login(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest loginRequest) {
         User user = authService.login(loginRequest);
         if (user != null) {
-            return ResponseEntity.ok(user);
+            String token = jwtUtils.generateJwtToken(user.getEmail(), user.getId());
+            return ResponseEntity.ok(new LoginResponse(token, user));
         } else {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
