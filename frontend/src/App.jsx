@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import Explore from './pages/Explore';
 import Dashboard from './pages/Dashboard';
 import ProjectDetails from './pages/ProjectDetails';
+import CreateProject from './pages/CreateProject';
 
 function AppContent() {
   return (
@@ -22,6 +23,7 @@ function AppContent() {
               <Route path="/explore" element={<Explore />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/projects/:id" element={<ProjectDetails />} />
+              <Route path="/create-project" element={<CreateProject />} />
             </Routes>
         </div>
       </main>

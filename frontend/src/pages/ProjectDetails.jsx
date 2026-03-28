@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
-import { Code2, Send, MessageSquare } from 'lucide-react';
+import { Code2, Send, MessageSquare, Github, GitCommit, Link as LinkIcon, ArrowRight } from 'lucide-react';
 import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,6 +9,9 @@ export default function ProjectDetails() {
   const { id } = useParams();
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  const [githubActivity, setGithubActivity] = useState([]);
+  const [githubLoading, setGithubLoading] = useState(false);
   
   // Chat state
   const [messages, setMessages] = useState([]);
@@ -20,12 +23,27 @@ export default function ProjectDetails() {
   const user = authUser || {};
 
   useEffect(() => {
+    const fetchGithubActivity = async (projectId) => {
+      setGithubLoading(true);
+      try {
+        const gRes = await api.get(`/projects/${projectId}/github/commits`);
+        setGithubActivity(gRes.data);
+      } catch (e) {
+        console.error('Failed to load GitHub activity natively', e);
+      } finally {
+        setGithubLoading(false);
+      }
+    };
+
     const fetchProject = async () => {
       try {
         const response = await api.get(`/projects/${id}`);
         setProject(response.data);
+        if (response.data.githubRepoUrl) {
+          fetchGithubActivity(response.data.id);
+        }
       } catch (error) {
-        console.error("Error fetching project", error);
+        console.error("Error fetching project metadata", error);
       } finally {
         setLoading(false);
       }
@@ -138,6 +156,65 @@ export default function ProjectDetails() {
             ))}
           </div>
         </div>
+
+        {/* Recent GitHub Activity Widget */}
+        {project.githubRepoUrl && (
+          <div className="bg-white/60 dark:bg-gray-900/60 backdrop-blur-xl rounded-3xl p-8 border border-gray-200/50 dark:border-gray-800/50 shadow-2xl relative group transition-all duration-300">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-3xl pointer-events-none" />
+            <div className="relative z-10 w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                <div className="flex items-center space-x-3">
+                  <div className="h-12 w-12 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center shadow-inner">
+                    <Github className="h-6 w-6 text-gray-700 dark:text-gray-300" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-white dark:to-gray-300 bg-clip-text text-transparent leading-tight tracking-tight">System Timeline</h2>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Track repository events seamlessly</p>
+                  </div>
+                </div>
+                <a href={project.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center space-x-2 text-sm text-indigo-500 font-bold px-5 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 transition-all hover:-translate-y-0.5 whitespace-nowrap shadow-sm">
+                  <LinkIcon className="h-4 w-4" />
+                  <span>View Source</span>
+                </a>
+              </div>
+
+              <div className="space-y-6 pt-2">
+                {githubLoading ? (
+                  <div className="animate-pulse space-y-5 pt-4 border-l-2 border-indigo-500/20 ml-2 pl-6">
+                    <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded-md w-3/4 shadow-inner"></div>
+                    <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded-md w-1/2 shadow-inner"></div>
+                  </div>
+                ) : githubActivity && githubActivity.length > 0 ? (
+                  githubActivity.map((event, idx) => (
+                    <div key={idx} className="relative pl-8 before:absolute before:inset-y-0 before:left-[11px] before:w-0.5 before:bg-gradient-to-b before:from-indigo-500/50 before:to-transparent last:before:hidden py-3 group/commit">
+                      <div className="absolute left-0 top-5 h-6 w-6 rounded-full border-2 border-indigo-500 bg-white dark:bg-gray-950 flex items-center justify-center shadow-[0_0_10px_rgba(99,102,241,0.5)] z-10 transition-transform group-hover/commit:scale-125 duration-300">
+                        <GitCommit className="h-3 w-3 text-indigo-500" />
+                      </div>
+                      <div className="bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl p-5 border border-gray-100 dark:border-gray-800 backdrop-blur-sm transition-all hover:bg-white dark:hover:bg-gray-800 shadow-sm hover:shadow-md hover:border-indigo-500/30">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center space-y-2 sm:space-y-0 mb-3">
+                          <span className="font-bold text-gray-900 dark:text-gray-100 flex items-center text-lg drop-shadow-sm">
+                            {event.commit?.author?.name || 'Unknown Author'}
+                          </span>
+                          <span className="text-xs font-mono font-semibold text-gray-500 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-3 py-1.5 rounded-lg shadow-sm">
+                            {new Date(event.commit?.author?.date || Date.now()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 dark:text-gray-300 mb-4 font-medium leading-relaxed">{event.commit?.message}</p>
+                        <a href={event.html_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-sm font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors group/link cursor-pointer">
+                          View API Extract <ArrowRight className="h-3.5 w-3.5 ml-1.5 transition-transform group-hover/link:translate-x-1" />
+                        </a>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-10 bg-gray-50/50 dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-800 my-4 shadow-inner mt-4">
+                    <p className="text-gray-500 dark:text-gray-400 font-medium">No recent commits established natively within tracking perimeter.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Real-time Collaboration Panel */}

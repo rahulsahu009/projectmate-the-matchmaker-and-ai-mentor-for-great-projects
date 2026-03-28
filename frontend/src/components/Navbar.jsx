@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { Moon, Sun, Search, LayoutDashboard, LogOut, LogIn, Code2 } from 'lucide-react';
+import { Moon, Sun, Search, LayoutDashboard, LogOut, LogIn, Code2, PlusCircle } from 'lucide-react';
 
 const Navbar = () => {
   const { theme, toggleTheme } = useTheme();

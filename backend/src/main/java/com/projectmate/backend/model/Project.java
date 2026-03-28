@@ -29,6 +29,9 @@ public class Project {
     private String requiredSkills;
     
     private String status;
+    
+    // Optional tracked repository
+    private String githubRepoUrl;
 
     @ManyToOne
     @JoinColumn(name = "creator_id")

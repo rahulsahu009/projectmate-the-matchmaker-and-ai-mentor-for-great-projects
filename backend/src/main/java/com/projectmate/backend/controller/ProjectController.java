@@ -1,6 +1,7 @@
 package com.projectmate.backend.controller;
 
 import com.projectmate.backend.model.Project;
+import com.projectmate.backend.service.GithubService;
 import com.projectmate.backend.service.ProjectService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -16,6 +17,9 @@ public class ProjectController {
 
     @Autowired
     private ProjectService projectService;
+    
+    @Autowired
+    private GithubService githubService;
 
     @GetMapping
     public ResponseEntity<List<Project>> getAllProjects() {
@@ -30,6 +34,11 @@ public class ProjectController {
         } else {
             return ResponseEntity.notFound().build();
         }
+    }
+    
+    @GetMapping("/{id}/github/commits")
+    public ResponseEntity<?> getProjectCommits(@PathVariable Long id) {
+        return ResponseEntity.ok(githubService.fetchRecentCommits(id));
     }
 
     @PostMapping
