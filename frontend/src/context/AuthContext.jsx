@@ -1,50 +1,37 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import api from '../api/axiosConfig';
+import React, { createContext, useState, useEffect } from 'react';
+import api from '../lib/axios';
 
-const AuthContext = createContext();
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Migration sweep from previous auth_data bundled approach
-    localStorage.removeItem('user'); 
-    localStorage.removeItem('auth_data');
-    
-    const storedUserStr = localStorage.getItem('user_profile');
-    const token = localStorage.getItem('jwt_token');
-    
-    if (storedUserStr && token) {
-      try {
-        const storedUser = JSON.parse(storedUserStr);
-        setUser(storedUser);
-      } catch (e) {
-        console.error("Failed to parse user profile context.");
-      }
-    }
-    setLoading(false);
-  }, []);
+    useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            setUser(JSON.parse(storedUser));
+        }
+        setLoading(false);
+    }, []);
 
-  const login = (authData) => {
-    // Decouples explicitly tracking 'jwt_token' string vs 'user_profile' JSON block
-    const { token, ...userData } = authData;
-    localStorage.setItem('jwt_token', token);
-    localStorage.setItem('user_profile', JSON.stringify(userData));
-    setUser(userData);
-  };
+    const login = (userData, token) => {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('token', token);
+    };
 
-  const logout = () => {
-    localStorage.removeItem('jwt_token');
-    localStorage.removeItem('user_profile');
-    setUser(null);
-  };
+    const logout = () => {
+        setUser(null);
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+    };
 
-  return (
-    <AuthContext.Provider value={{ user, login, logout, isAuth: !!user, loading }}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+    if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Loading...</div>;
+
+    return (
+        <AuthContext.Provider value={{ user, login, logout }}>
+            {children}
+        </AuthContext.Provider>
+    );
 };
-
-export const useAuth = () => useContext(AuthContext);
