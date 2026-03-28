@@ -69,7 +69,7 @@ const ProjectDetails = () => {
 
     useEffect(() => {
         const client = new Client({
-            brokerURL: 'ws://localhost:8080/project-websocket',
+            brokerURL: import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8080/project-websocket',
             reconnectDelay: 5000,
             onConnect: () => {
                 client.subscribe(`/topic/chat/${id}/TEAM`, (msg) => {
