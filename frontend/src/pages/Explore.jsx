@@ -66,8 +66,7 @@ export default function Explore() {
                   ))}
                 </div>
               </div>
-              
-              <Link to={`/project/${project.id}`} className="mt-auto flex items-center justify-center space-x-2 py-3 w-full rounded-xl bg-gray-100 hover:bg-indigo-600 hover:text-white dark:bg-gray-800 dark:hover:bg-indigo-600 text-gray-900 dark:text-gray-200 font-semibold transition-colors duration-300">
+              <Link to={`/projects/${project.id}`} className="mt-auto flex items-center justify-center space-x-2 py-3 w-full rounded-xl bg-gray-100 hover:bg-indigo-600 hover:text-white dark:bg-gray-800 dark:hover:bg-indigo-600 text-gray-900 dark:text-gray-200 font-semibold transition-colors duration-300">
                 <span>View Details</span>
                 <ArrowRight className="h-4 w-4" />
               </Link>

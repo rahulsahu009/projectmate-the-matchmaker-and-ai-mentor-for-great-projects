@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
@@ -21,7 +21,7 @@ function AppContent() {
               <Route path="/login" element={<Login />} />
               <Route path="/explore" element={<Explore />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/project/:id" element={<ProjectDetails />} />
+              <Route path="/projects/:id" element={<ProjectDetails />} />
             </Routes>
         </div>
       </main>
@@ -33,9 +33,7 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
+        <AppContent />
       </AuthProvider>
     </ThemeProvider>
   );
