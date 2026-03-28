@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn } from 'lucide-react';
-import api from '../services/api';
+import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {

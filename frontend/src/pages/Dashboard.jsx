@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import api from '../services/api';
+import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 import { LayoutDashboard } from 'lucide-react';
 

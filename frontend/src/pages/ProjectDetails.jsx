@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import { Code2, Send, MessageSquare } from 'lucide-react';
-import api from '../services/api';
+import api from '../api/axiosConfig';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProjectDetails() {

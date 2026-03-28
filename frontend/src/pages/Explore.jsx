@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Code2, ArrowRight } from 'lucide-react';
-import api from '../services/api';
+import api from '../api/axiosConfig';
 
 export default function Explore() {
   const [projects, setProjects] = useState([]);

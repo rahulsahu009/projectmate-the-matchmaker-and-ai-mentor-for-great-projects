@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import api from '../services/api';
+import api from '../api/axiosConfig';
 
 const AuthContext = createContext();
 
@@ -8,32 +8,35 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Migration check: clean up old 'user' object if it was there
+    // Migration sweep from previous auth_data bundled approach
     localStorage.removeItem('user'); 
+    localStorage.removeItem('auth_data');
     
-    const storedAuthStr = localStorage.getItem('auth_data');
-    if (storedAuthStr) {
+    const storedUserStr = localStorage.getItem('user_profile');
+    const token = localStorage.getItem('jwt_token');
+    
+    if (storedUserStr && token) {
       try {
-        const storedAuth = JSON.parse(storedAuthStr);
-        // Flatten extraction
-        const parsedUser = storedAuth.user ? storedAuth.user : (({ token, ...rest }) => rest)(storedAuth);
-        setUser(parsedUser);
+        const storedUser = JSON.parse(storedUserStr);
+        setUser(storedUser);
       } catch (e) {
-        console.error("Failed to parse user session.");
+        console.error("Failed to parse user profile context.");
       }
     }
     setLoading(false);
   }, []);
 
   const login = (authData) => {
-    // Dynamically store unified or flattened structure
-    const parsedUser = authData.user ? authData.user : (({ token, ...rest }) => rest)(authData);
-    localStorage.setItem('auth_data', JSON.stringify({ token: authData.token, ...parsedUser }));
-    setUser(parsedUser);
+    // Decouples explicitly tracking 'jwt_token' string vs 'user_profile' JSON block
+    const { token, ...userData } = authData;
+    localStorage.setItem('jwt_token', token);
+    localStorage.setItem('user_profile', JSON.stringify(userData));
+    setUser(userData);
   };
 
   const logout = () => {
-    localStorage.removeItem('auth_data');
+    localStorage.removeItem('jwt_token');
+    localStorage.removeItem('user_profile');
     setUser(null);
   };
 
