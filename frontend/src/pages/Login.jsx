@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { LogIn } from 'lucide-react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
+  const { login } = useAuth();
   const [email, setEmail] = useState('alice@test.com');
   const [password, setPassword] = useState('password');
   const [error, setError] = useState('');
@@ -15,8 +17,8 @@ export default function Login() {
     
     try {
       const response = await api.post('/auth/login', { email, password });
-      localStorage.setItem('user', JSON.stringify(response.data));
-      // Full reload to elegantly re-trigger exact state in Navbar (for simple MVP)
+      login(response.data);
+      // Full reload to gracefully transition layout for MVP
       window.location.href = '/explore'; 
     } catch (err) {
       setError('Invalid credentials or server offline.');

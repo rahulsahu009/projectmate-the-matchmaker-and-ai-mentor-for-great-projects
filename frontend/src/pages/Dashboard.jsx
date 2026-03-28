@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { LayoutDashboard } from 'lucide-react';
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Parse user from local storage
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
     if (!user.id) {

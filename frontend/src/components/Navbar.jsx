@@ -1,23 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Moon, Sun, Search, LayoutDashboard, LogOut, LogIn, Code2 } from 'lucide-react';
 
 const Navbar = () => {
   const { theme, toggleTheme } = useTheme();
+  const { isAuth, logout } = useAuth();
   const navigate = useNavigate();
-  const [isAuth, setIsAuth] = useState(false);
-
-  useEffect(() => {
-    // Basic local storage check for hackathon auth simulation
-    const user = localStorage.getItem('user');
-    if (user) setIsAuth(true);
-  }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    setIsAuth(false);
+    logout();
     navigate('/login');
   };
 

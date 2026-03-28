@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Client } from '@stomp/stompjs';
 import { Code2, Send, MessageSquare } from 'lucide-react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function ProjectDetails() {
   const { id } = useParams();
@@ -15,7 +16,8 @@ export default function ProjectDetails() {
   const stompClient = useRef(null);
   const scrollRef = useRef(null);
 
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const { user: authUser } = useAuth();
+  const user = authUser || {};
 
   useEffect(() => {
     const fetchProject = async () => {
